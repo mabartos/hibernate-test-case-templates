@@ -15,12 +15,17 @@
  */
 package org.hibernate.bugs;
 
+import jakarta.persistence.TypedQuery;
 import org.hibernate.Session;
-import org.hibernate.Transaction;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.junit.Assert;
 import org.junit.Test;
+
+import java.util.List;
+
+import static org.junit.Assert.assertNotNull;
 
 /**
  * This template demonstrates how to develop a test case for Hibernate ORM, using its built-in unit test framework.
@@ -36,9 +41,9 @@ public class ORMUnitTestCase extends BaseCoreFunctionalTestCase {
 	// Add your entities here.
 	@Override
 	protected Class[] getAnnotatedClasses() {
-		return new Class[] {
-//				Foo.class,
-//				Bar.class
+		return new Class[]{
+				FederatedIdentityEntity.class,
+				UserEntity.class
 		};
 	}
 
@@ -69,11 +74,76 @@ public class ORMUnitTestCase extends BaseCoreFunctionalTestCase {
 	// Add your tests, using standard JUnit.
 	@Test
 	public void hhh123Test() throws Exception {
-		// BaseCoreFunctionalTestCase automatically creates the SessionFactory and provides the Session.
-		Session s = openSession();
-		Transaction tx = s.beginTransaction();
-		// Do stuff...
-		tx.commit();
-		s.close();
+		final String someProviderId = "44442222";
+		Long id;
+
+		// Create a User entity
+		{
+			Session s = openSession();
+			s.getTransaction().begin();
+
+			UserEntity userEntity = new UserEntity();
+			userEntity.setUsername("John");
+
+			s.persist(userEntity);
+			s.flush();
+
+			id = userEntity.getId();
+
+			s.getTransaction().commit();
+			s.close();
+		}
+
+		assertNotNull(id);
+
+		// Create a Federated Identity entity
+		{
+			Session s = openSession();
+			s.getTransaction().begin();
+
+			FederatedIdentityEntity federatedIdentity = new FederatedIdentityEntity();
+			federatedIdentity.setIdentityProvider(someProviderId);
+
+			UserEntity userEntity = s.getReference(UserEntity.class, id);
+			assertNotNull(userEntity);
+
+			federatedIdentity.setUser(userEntity);
+
+			s.persist(federatedIdentity);
+			s.flush();
+
+			s.getTransaction().commit();
+			s.close();
+		}
+
+		// Update federated identity
+		{
+			Session s = openSession();
+			s.getTransaction().begin();
+
+			FederatedIdentityEntity federatedIdentity = findFederatedIdentity(s, id, someProviderId);
+
+			assertNotNull(federatedIdentity);
+			Assert.assertEquals(federatedIdentity.getUser().getId(), id);
+
+			federatedIdentity.setUserName("ChangedUsername");
+			s.persist(federatedIdentity);
+			s.flush();
+
+			s.getTransaction().commit();
+			s.close();
+		}
+	}
+
+	private FederatedIdentityEntity findFederatedIdentity(Session s, Long userId, String identityProvider) {
+		TypedQuery<FederatedIdentityEntity> query = s.createNamedQuery("findFederatedIdentityByUserAndProvider", FederatedIdentityEntity.class);
+
+		UserEntity userEntity = s.getReference(UserEntity.class, userId);
+
+		query.setParameter("user", userEntity);
+		query.setParameter("identityProvider", identityProvider);
+
+		List<FederatedIdentityEntity> results = query.getResultList();
+		return results.size() > 0 ? results.get(0) : null;
 	}
 }
