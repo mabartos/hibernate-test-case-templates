@@ -15,12 +15,18 @@
  */
 package org.hibernate.bugs;
 
+import jakarta.persistence.TypedQuery;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 import org.junit.Test;
+
+import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 /**
  * This template demonstrates how to develop a test case for Hibernate ORM, using its built-in unit test framework.
@@ -37,6 +43,7 @@ public class ORMUnitTestCase extends BaseCoreFunctionalTestCase {
 	@Override
 	protected Class[] getAnnotatedClasses() {
 		return new Class[] {
+				MyEntity.class
 //				Foo.class,
 //				Bar.class
 		};
@@ -70,10 +77,45 @@ public class ORMUnitTestCase extends BaseCoreFunctionalTestCase {
 	@Test
 	public void hhh123Test() throws Exception {
 		// BaseCoreFunctionalTestCase automatically creates the SessionFactory and provides the Session.
-		Session s = openSession();
-		Transaction tx = s.beginTransaction();
-		// Do stuff...
-		tx.commit();
-		s.close();
+		final String SOME_CLIENT_ID = "44442222";
+		String id;
+		{
+			Session s = openSession();
+			Transaction tx = s.beginTransaction();
+
+			MyEntity entity = new MyEntity();
+			entity.setId("some-uuid");
+			entity.setClientId(SOME_CLIENT_ID);
+
+			s.persist(entity);
+			s.flush();
+
+			id = entity.getId();
+
+			tx.commit();
+			s.close();
+		}
+
+		assertNotNull(id);
+
+		{
+			Session s = openSession();
+			Transaction tx = s.beginTransaction();
+
+			String entityId = getEntityIdByClientId(s, SOME_CLIENT_ID);
+			assertNotNull(entityId);
+			assertEquals(entityId, id);
+
+			tx.commit();
+			s.close();
+		}
+	}
+
+	public String getEntityIdByClientId(Session s, String clientId) {
+		TypedQuery<String> query = s.createNamedQuery("findEntityIdByClientId", String.class);
+		query.setParameter("clientId", clientId);
+		List<String> results = query.getResultList();
+		if (results.isEmpty()) return null;
+		return results.get(0);
 	}
 }
